@@ -1,4 +1,5 @@
-from utils import arrange_data, histogram_filler 
+from utils import arrange_data, histogram_filler, arrange_data_Matrix 
+import importlib
 
 import ROOT
 import os 
@@ -33,6 +34,13 @@ class Dataset:
         hist.SetDirectory(0)  
         file.Close()
         return cls(name=name or histname, var=var, hist=hist)
+    
+    @classmethod 
+    def from_MATRIX_dir(cls, matrix_dir : str, var: str, name: str , order:str , debug:bool, sel = None):
+        data = arrange_data_Matrix(matrix_dir, var, order = order , debug= debug , sel = sel)
+#        print(data)
+        hist = histogram_filler(data, var, name)
+        return cls(var = var , name = name, directory = matrix_dir, data = data , hist =  hist)
 
     def load_data(self):
         self.data = arrange_data(self.directory, self.var)
@@ -75,6 +83,13 @@ class Dataset:
         if self.hist is None:
             self.make_hist()
         c = ROOT.TCanvas(f"c_{self.name}", f"{self.var}", 800, 600)
+        
+        # Adjust margins so axis labels are not cut off
+        c.SetBottomMargin(0.15)  # more space for x-axis labels
+        c.SetLeftMargin(0.17)
+        c.SetRightMargin(0.08)   # <-- this is the key one
+        c.SetTopMargin(0.05)
+
         self.hist.SetLineColor(color)
         self.hist.Draw()
         if logy:

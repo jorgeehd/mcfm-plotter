@@ -23,7 +23,7 @@ class Compare:
         
 
 
-    def create_kfactor(self, num_dataset , denom_dataset , new_y_axis_name:str , name:str = None , output_dir="k_factors" ,save = True):
+    def create_kfactor(self, num_dataset , denom_dataset , new_y_axis_name:str , name:str = None , output_dir="k_factors" ,save = False, add = False):
         """
         Creates a k-factor histogram from the ratio of two datasets. 
         """
@@ -60,6 +60,9 @@ class Compare:
             k_factorData.save_as_TH1F(filename = f"kfactor_{self.var}" , output_dir = f"{output_dir}/{k_factorData.name}")
         
         self.kfactor = k_factorData 
+
+        if add:
+            self.add_dataset(k_factorData)
         return None
 
     def scale_histogram(self, input_dataset , name = None): 
@@ -93,6 +96,30 @@ class Compare:
         self.datasets.append(dataset)
         print(f"Added dataset '{dataset.name}' to comparison ({len(self.datasets)} total).")
 
+    def integrate(self, sel:list[bool] = None):
+
+        """
+        Integrates the cross section for all datasets in the compare object.
+        sel allows for selecting which of the datasets in the compare object to integrate. It is a list of boolean values. 
+        """
+
+        integrals = {}
+        if sel is None: 
+            for dataset in self.datasets:
+                if dataset.hist is None: 
+                    dataset.make_hist()
+                integral = dataset.hist.Integral()
+                integrals[dataset.name] = integral
+        else: 
+            tmp_datasets = [d for d, keep in zip(self.datasets, sel) if keep] #lol
+            for dataset in tmp_datasets:
+                if dataset.hist is None: 
+                    dataset.make_hist()
+                integral = dataset.hist.Integral()
+                integrals[dataset.name] = integral
+
+        return integrals
+
 
     
     def plot(self, labels=None, colors=None, logy=False, output_dir= f"plots" , sel:list[bool] = None):
@@ -116,6 +143,14 @@ class Compare:
         #canvas 
         c = ROOT.TCanvas("c", "Comparison", 800, 600)
         c.SetGrid()
+        
+        
+        # Adjust margins so axis labels are not cut off
+        c.SetBottomMargin(0.15)  # more space for x-axis labels
+        c.SetLeftMargin(0.17)
+        c.SetRightMargin(0.08)   # <-- this is the key one
+        c.SetTopMargin(0.05)
+
 
 #        stack  = ROOT.THStack("my_stack", self.name)
 

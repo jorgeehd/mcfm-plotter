@@ -16,6 +16,28 @@ ROOT.gROOT.LoadMacro("/Users/jorgehernandez/Documents/HEP_work/summer2024/macros
 ROOT.setTDRStyle()
 gStyle.SetOptStat(0)
 
+def extract_data_MATRIX(filepath, n_skip = 0 ): 
+    data = []
+    with open(filepath, 'r') as f: 
+        
+        #functionality for skipping first lines used for njets variable (in case of bugs in data files from MATRIX)
+        for _ in range(n_skip): 
+            next(f)        
+        for line in f: 
+            if line.strip().startswith("#") or not line.strip():
+                continue 
+            parts = line.split()
+            
+            xmin = float(parts[0]) 
+            xmax = float(parts[1])
+            cross = float(parts[2])
+            error = float(parts[3])
+            if (xmin == xmax): 
+                continue 
+            data.append({'xmin': xmin , 'xmax': xmax, 'cross': cross, 'error': error})
+            
+    return data        
+
 def extract_data(filepath):
     """
     Extracts histogram data from a file and arranges it into a list of dictionaries with bin 
@@ -32,11 +54,64 @@ def extract_data(filepath):
                 cross = float(parts[2])
                 error = float(parts[3])
                 data.append({'xmin': xmin, 'xmax': xmax, 'cross': cross, 'error': error})
+                
     return data
+
+def arrange_data_Matrix(histogram_dir, var: str, order: str, debug: bool, sel=None):
+    """
+    Arranges MCFM histogram data from multiple files in a directory into 
+    a single sorted list of dictionaries 
+    with bins, cross and error information.
+    Run with sel set to none for all the orders. Run with sel set to a specific order (e.g LO) for single order plots. 
+    """
+    pat = re.compile(r"__(NNLO|NLO|LO)(?:_|\.|$)", re.I)
+    ordering = {"LO": 0, "NLO": 1, "NNLO": 2}
+
+    def rank(name: str) -> int:
+        m = pat.search(name)
+        return ordering[m.group(1).upper()] if m else 999
+
+    def matches_order(filename: str, target_order: str) -> bool:
+        m = pat.search(filename)
+        return m is not None and m.group(1).upper() == target_order.upper()
+
+    if sel is not None:
+        if sel not in ("LO", "NLO", "NNLO"):
+            raise ValueError("Sel must be one of: LO, NLO, NNLO")
+
+        files = [
+            os.path.join(histogram_dir, f)
+            for f in os.listdir(histogram_dir)
+            if (var in f) and matches_order(f, sel)
+        ]
+
+        if debug:
+            print(files)
+
+        if (var == "n_jets"): 
+#            print(f"check 1")
+            extract_data_MATRIX(files[0] , n_skip = 2) # add the special case for njets variable to avoid bug with the -1 1 and 0, 1 bounds in the hist files. 
+
+        return extract_data_MATRIX(files[0])
+
+    else:
+        files = [os.path.join(histogram_dir, f) for f in os.listdir(histogram_dir) if (var in f)]
+        files_sorted = sorted(files, key=rank)
+
+        if debug:
+            print("unsorted files:")
+            for f in files:
+                print(f)
+            print("sorted files:")
+            for f in files_sorted:
+                print(f)
+            print(f"The position of the {order} file is {ordering[order]}")
+
+        return extract_data_MATRIX(files_sorted[ordering[order]])
 
 def arrange_data(histogram_dir, var :str): 
     """
-    Arranges histogram data from multiple files in a directory into 
+    Arranges MCFM histogram data from multiple files in a directory into 
     a single sorted list of dictionaries with bins, cross and error information.
     """
     hist = []
@@ -144,7 +219,8 @@ def plot_axis_name(var: str) -> str:
         "mgaga": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]",
         "highMassRange": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]", 
         "highMass": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]", 
-        "m34_highMass": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]", 
+        "m34_highMass": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]",
+        "m_diphoton": ";m_{#gamma#gamma} [GeV]; d#sigma/dm [fb/GeV]",
 
         # transverse momentum
         "ptgg": ";pT_{#gamma#gamma} [GeV]; d#sigma/dpT [fb/GeV]",
@@ -163,6 +239,10 @@ def plot_axis_name(var: str) -> str:
         "pt(6)": ";pT_{#gamma} [GeV]; d#sigma/dpT [fb/GeV]",
         "highPtRange": ";pT_{#gamma#gamma} [GeV]; d#sigma/dpT [fb/GeV]",
         "highPtR": ";pT_{#gamma#gamma} [GeV]; d#sigma/dpT [fb/GeV]",
+        "pT_gamma_2" :";pT_{#gamma,2} [GeV]; d#sigma/dpT [fb/GeV]" , 
+        "pT_gamma_1" :";pT_{#gamma,1} [GeV]; d#sigma/dpT [fb/GeV]" , 
+        "pT_jet_1": ";pT_{'j',1} [GeV]; d#sigma/dpT [fb/GeV]" ,
+        "pT_jet_2": ";pT_{'j',2} [GeV]; d#sigma/dpT [fb/GeV]" , 
 
         # rapidity / angles
         "eta34": ";#eta_{#gamma#gamma}; d#sigma/d#eta [fb]",
@@ -175,11 +255,27 @@ def plot_axis_name(var: str) -> str:
         "y(4)": ";y_{#gamma,2}; d#sigma/dy [fb]",
         "y5": ";y_{#gamma}; d#sigma/dy [fb]",
         "y(5)": ";y_{#gamma}; d#sigma/dy [fb]",
+        "eta_gamma1": ";y_{#gamma,1}; d#sigma/dy [fb]",
+        "eta_gamma2": ";y_{#gamma,2}; d#sigma/dy [fb]",
 
         "deltaphi": ";#Delta phi_{#gamma#gamma}; d#sigma/dphi [fb]",
         "DeltaR34": ";#Delta R_{#gamma#gamma}; d#sigma/dR [fb]",
+        "R_gamgam": ";#Delta R_{#gamma#gamma}; d#sigma/dR [fb]",
+        "R_gamjet": ";#Delta R_{#gamma,j}; d#sigma/dR [fb]",
+        "dR_gamjet": ";#Delta R_{#gamma,j}; d#sigma/dR [fb]",
         "Abs": ";|#eta_{#gamma#gamma}|; d#sigma/d|#eta| [fb]",
-    }
+
+        #number of jets
+        "n_jets": "; n_jets; " ,
+
+        #centrality 
+        "cent" : ";centrality (C); d#sigma/dC [fb]",
+        "cent_gamma1" : ";centrality (C); d#sigma/dC [fb]", 
+        "cent_gamma2" : ";centrality (C); d#sigma/dC [fb]",   
+        "cent_diphoton" : ";centrality (C); d#sigma/dC [fb]",
+        
+         
+    } 
     return mapping.get(var, var)
 
 def histogram_filler(data1 , var , name = None ) -> ROOT.TH1F:
@@ -190,6 +286,8 @@ def histogram_filler(data1 , var , name = None ) -> ROOT.TH1F:
     Returns a ROOT.TH1F histogram.
     """
     # --- extract bin edges from first dataset ---
+    #print((data1))
+    #print(entry["xmin"] for entry in data1)
     bins = [entry["xmin"] for entry in data1]
     bins.append(data1[-1]["xmax"])
     nbins = len(bins) - 1
@@ -261,7 +359,7 @@ def plot(directories, var: str, labels=None, colors=None):
         colors = [ROOT.kRed, ROOT.kBlue, ROOT.kGreen+2, ROOT.kMagenta, ROOT.kOrange, ROOT.kCyan]
 
     # build histograms
-    print(f"len(directories): {len(directories)}" )
+    #print(f"len(directories): {len(directories)}" )
     histograms = []
     for i, d in enumerate(directories):
         print(i)
@@ -271,7 +369,7 @@ def plot(directories, var: str, labels=None, colors=None):
         h.SetLineWidth(2)
         histograms.append(h)
 
-    print(len(histograms))
+    #print(len(histograms))
     # axis titles
     axNames = plot_axis_name(var).split(";")
 
